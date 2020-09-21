@@ -26,6 +26,9 @@ import org.apache.spark.ml.feature.Instance
 import org.apache.spark.ml.linalg
 import org.apache.spark.ml.linalg._
 
+import com.github.fommil.netlib.{BLAS => NetlibBLAS}
+import com.github.fommil.netlib.BLAS.{getInstance => NativeBLAS}
+
 /**
  * HingeAggregator computes the gradient and loss for Hinge loss function as used in
  * binary classification for instances in sparse or dense vector in an online fashion.
@@ -51,7 +54,16 @@ private[ml] class HingeAggregatorX(
     case _ => throw new IllegalArgumentException(s"coefficients only supports dense vector" +
       s" but got type ${bcCoefficients.value.getClass}.")
   }
+  @transient private var _nativeBLAS: NetlibBLAS = _
+
   protected override val dim: Int = numFeaturesPlusIntercept
+
+  private def nativeBLAS: NetlibBLAS = {
+    if (_nativeBLAS = null){
+      _nativeBLAS = NativeBLAS
+    }
+    _nativeBLAS
+  }
 
   /**
    * Add a new training instance to this HingeAggregator, and update the loss and gradient
@@ -67,15 +79,16 @@ private[ml] class HingeAggregatorX(
       require(weight >= 0.0, s"instance weight, $weight has to be >= 0.0")
 
       if (weight == 0.0) return this
-      val localFeaturesStd = DoubleArrayList.wrap(bcFeaturesStd.value)
+      //val localFeaturesStd = DoubleArrayList.wrap(bcFeaturesStd.value)
       val localCoefficients = DoubleArrayList.wrap(coefficientsArray)
       val localGradientSumArray = gradientSumArray
 
       val dotProduct = {
-        var sum = 0.0
-        features.foreachActive { (index, value) =>
-            sum += localCoefficients.getDouble(index) * value * localFeaturesStd.getDouble(index)
-        }
+        //var sum = 0.0
+        //features.foreachActive { (index, value) =>
+        //    sum += localCoefficients.getDouble(index) * value * localFeaturesStd.getDouble(index)
+        //}
+        var sum = nativeBLAS.ddot(features.size,features.toArray,1,coefficientsArray,1)
         if (fitIntercept) sum += localCoefficients.getDouble(numFeaturesPlusIntercept - 1)
         sum
       }
@@ -92,8 +105,7 @@ private[ml] class HingeAggregatorX(
         val gradientScale = -labelScaled * weight
         features.foreachActive { (index, value) =>
           val e = localGradientSumArray.getDouble(index)
-          localGradientSumArray.set(index, e + value * gradientScale
-            * localFeaturesStd.getDouble(index))
+          localGradientSumArray.set(index, e + value * gradientScale)
         }
         if (fitIntercept) {
           val e = localGradientSumArray.getDouble(localGradientSumArray.size() - 1)

@@ -38,7 +38,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Dataset, Row}
 import org.apache.spark.sql.functions.{col, lit}
 
-
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.ml.feature.StandardScaler
 
 /**
  * :: Experimental ::
@@ -155,8 +156,22 @@ class LinearSVC @Since("2.2.0") (
 
   override protected def train(dataset: Dataset[_]): LinearSVCModel = {
     val w = if (!isDefined(weightCol) || $(weightCol).isEmpty) lit(1.0) else col($(weightCol))
+    val st = System.currentTimeMillis()
+    val scaler = new StandardScaler()
+      .setInputCol("features")
+      .setOutputCol("scaledFeatures")
+      .setWithStd(true)
+      .setWithMean(false)
+
+    val scalerModel = scaler.fit(dataset)
+    val t1 = System.currentTimeMillis()
+    println("Scaler fit time[min]: " + (t1 - st).toDouble / 60 / 1000)
+    val datasetStd = scalerModel.transform(dataset)
+    val t2 = System.currentTimeMillis()
+    println("Scaler transfrom time[min]: "+ (t2 - t1).toDouble / 60 / 1000)
+
     val instances: RDD[Instance] =
-      dataset.select(col($(labelCol)), w, col($(featuresCol))).rdd.map {
+      datasetStd.select(col($(labelCol)), w, col("scaledFeatures")).rdd.map {
         case Row(label: Double, weight: Double, features: Vector) =>
           Instance(label, weight, features)
       }
@@ -283,6 +298,8 @@ class LinearSVC @Since("2.2.0") (
 
   def getIters: Int = iters
 }
+
+case class Middle(label: Double, weight: Double, features: Vector, scaledFeatures: Vector)
 
 @Since("2.2.0")
 object LinearSVC extends DefaultParamsReadable[LinearSVC] {
