@@ -59,7 +59,7 @@ private[ml] class HingeAggregatorX(
   protected override val dim: Int = numFeaturesPlusIntercept
 
   private def nativeBLAS: NetlibBLAS = {
-    if (_nativeBLAS = null){
+    if (_nativeBLAS == null){
       _nativeBLAS = NativeBLAS
     }
     _nativeBLAS
